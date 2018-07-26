@@ -1,13 +1,82 @@
 #import pytorch
 import numpy as np
-
+import matplotlib.pyplot as plt
 
 class AnnModel:
     
     def __init__(self):
+        self.dim_in = None
+        self.dim_out = None
+        self.num_layers = None
+        self.reg_type = None
+        self.reg_lambda = None
+        
+        #Weights, transform from input to output Dim
+        self.W = []
+        # Bias
+        self.b = []
+        # Layer output intialize
+        self.H = []
+        # gradients
+        self.dH = []
+        self.dW = []
+        self.db = []
+        return
+    
+    def ForwardPass(self,X):
         pass
+    
+    def BackwardPass(self):
+        pass
+    
+    def Loss(self):
+        pass
+    
+    def WeightUpdate(self):
+        pass
+    
+    def AnnAccuracy(self, X, Y_exp):
+        # Training Set accuracy 
+        Y = self.ForwardPass(X)
+        preidicted_class = np.argmax(Y, axis=1)
+        return np.mean(preidicted_class == Y_exp)
+    
+    def AnnVisualize(self, X, y, eval_step = 1e-2):
+        # Visualize
+        # plot the resulting classifier
+        h = 0.02
+        x_min, x_max = X[:, 0].min() - 1, X[:, 0].max() + 1
+        y_min, y_max = X[:, 1].min() - 1, X[:, 1].max() + 1
+        xx, yy = np.meshgrid(np.arange(x_min, x_max, eval_step),
+                            np.arange(y_min, y_max, eval_step))
+        Z = self.ForwardPass(np.c_[xx.ravel(), yy.ravel()])
+        Z = np.argmax(Z, axis=1)
+        Z = Z.reshape(xx.shape)
+        fig = plt.figure()
+        plt.contourf(xx, yy, Z, cmap=plt.cm.Spectral, alpha=0.8)
+        plt.scatter(X[:, 0], X[:, 1], c=y, s=40, cmap=plt.cm.Spectral)
+        plt.xlim(xx.min(), xx.max())
+        plt.ylim(yy.min(), yy.max())
 
-class MLPModel:
+        plt.figure()
+        plt.subplot(2,1,1)
+        plt.imshow(self.W[0])
+        plt.colorbar()
+        plt.subplot(2,1,2)
+        plt.imshow(self.W[1])
+        plt.colorbar()
+
+        np.set_printoptions(precision=3,suppress=True)
+        for i in range(self.num_layers):
+            print(self.W[i])
+            w_size = self.W[i].shape[0]*self.W[i].shape[1]
+            print('Sparsity W[%d] %f'% (i, (w_size-np.count_nonzero(self.W[i]))/w_size ) )
+        
+        plt.show()
+        #fig.savefig('spiral_net.png')
+        return 
+
+class MLPModel(AnnModel):
     def __init__(self, dim_in, hidden_layer_dim, dim_out, activation_type = 'Relu', reg_type = 'L2', reg = 1e-4 ):
         self.dim_in = dim_in
         self.dim_out = dim_out
@@ -107,9 +176,9 @@ class MLPModel:
         
         back_grad = dscores
         for i in range(self.num_layers - 1, -1, -1):
-            self.dH[i] = np.dot(back_grad, self.dW[i+1].T)
+            self.dH[i] = np.dot(back_grad, self.W[i+1].T)
            
-            #backprop Relu, NOTE: BIG diff between H<=0 and H<0 
+            #backprop Relu
             self.dH[i][self.H[i] <= 0] = 0
            
             back_grad = self.dH[i] 
@@ -139,13 +208,7 @@ class MLPModel:
             self.b[i] += -step_size * self.db[i]
 
         return # function end
-    def NnAccuracy(self,X,Y_exp):
-        # Training Set accuracy 
-        Y = self.ForwardPass(X)
-        
-        preidicted_class = np.argmax(Y, axis=1)
-
-        return np.mean(preidicted_class == Y_exp)
+    
 
 def main():
     pass
