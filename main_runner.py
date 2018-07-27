@@ -11,7 +11,7 @@ step_size = 1e-0
 reg_type = 'L1'
 reg = 1e-4 # regularization weight
 ## Defining Neural Network
-h = [100] # Number of hidden neurons
+h = [10,50] # Number of hidden neurons
    
 # Generate data
 spiral_data = GetData.SpiralDataGen(dim = D, num_samples = N, num_classes = K)
@@ -22,7 +22,8 @@ X = spiral_data.data
 y = spiral_data.class_type
 
 ##  Defining ANN MLP 
-mlp_model = AnnModel.MLPModel(dim_in = D, hidden_layer_dim = h, dim_out = K, reg_type = reg_type, reg = reg )
+mlp_model = AnnModel.MLPModel(dim_in = D, hidden_layer_dim = h, dim_out = K, 
+                             reg_type = reg_type, reg = reg, prune=True, prune_thr = 1e-5 )
 
 for i in range(10000):
     
@@ -42,4 +43,5 @@ for i in range(10000):
 precission = mlp_model.AnnAccuracy(X,y)
 print("Training Accuracy %f" % (precission) )
 
-mlp_model.AnnVisualize(X,y)
+plt = mlp_model.AnnVisualize(X,y)
+plt.show()

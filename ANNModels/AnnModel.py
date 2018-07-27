@@ -44,7 +44,6 @@ class AnnModel:
     def AnnVisualize(self, X, y, eval_step = 1e-2):
         # Visualize
         # plot the resulting classifier
-        h = 0.02
         x_min, x_max = X[:, 0].min() - 1, X[:, 0].max() + 1
         y_min, y_max = X[:, 1].min() - 1, X[:, 1].max() + 1
         xx, yy = np.meshgrid(np.arange(x_min, x_max, eval_step),
@@ -52,37 +51,42 @@ class AnnModel:
         Z = self.ForwardPass(np.c_[xx.ravel(), yy.ravel()])
         Z = np.argmax(Z, axis=1)
         Z = Z.reshape(xx.shape)
-        fig = plt.figure()
+        
         plt.contourf(xx, yy, Z, cmap=plt.cm.Spectral, alpha=0.8)
         plt.scatter(X[:, 0], X[:, 1], c=y, s=40, cmap=plt.cm.Spectral)
         plt.xlim(xx.min(), xx.max())
         plt.ylim(yy.min(), yy.max())
+        for i in range(self.num_layers+1):
+            plt.figure()
+            #plt.subplot(2,1,1)
+            plt.imshow(self.W[i],interpolation='nearest', aspect='auto')
+            plt.colorbar()
+            s = 'Weight Matrix W[%d]'%(i)
+            plt.title(s)
+            plt.xlabel('Output Dim')
+            plt.ylabel('Input Dim')
 
-        plt.figure()
-        plt.subplot(2,1,1)
-        plt.imshow(self.W[0])
-        plt.colorbar()
-        plt.subplot(2,1,2)
-        plt.imshow(self.W[1])
-        plt.colorbar()
 
-        np.set_printoptions(precision=3,suppress=True)
-        for i in range(self.num_layers):
-            print(self.W[i])
+        np.set_printoptions(precision=3)#,suppress=True)
+        for i in range(self.num_layers+1):
+           # print(self.W[i])
             w_size = self.W[i].shape[0]*self.W[i].shape[1]
-            print('Sparsity W[%d] %f'% (i, (w_size-np.count_nonzero(self.W[i]))/w_size ) )
+            print('Non-zero W[%d] %f'% (i, (np.count_nonzero(self.W[i]))/w_size ) )
         
-        plt.show()
+        #plt.show()
         #fig.savefig('spiral_net.png')
-        return 
+        return plt
 
 class MLPModel(AnnModel):
-    def __init__(self, dim_in, hidden_layer_dim, dim_out, activation_type = 'Relu', reg_type = 'L2', reg = 1e-4 ):
+    def __init__(self, dim_in, hidden_layer_dim, dim_out, activation_type = 'Relu',
+                 reg_type = 'L2', reg = 1e-4, prune = False, prune_thr = 1e-6 ):
         self.dim_in = dim_in
         self.dim_out = dim_out
         self.num_layers = len(hidden_layer_dim)
         self.reg_type = reg_type
         self.reg_lambda = reg
+        self.prune = prune
+        self.prune_thr = prune_thr
         
         #Weights, transform from input to output Dim
         self.W = []
@@ -162,7 +166,7 @@ class MLPModel(AnnModel):
         loss = data_loss + reg_loss
         return loss
 
-    def BackwardPass(self, X, Y_exp):
+    def BackwardPass(self, X, Y_exp, local_reg_lambda = None):
          # gradients
         num_examples = X.shape[0]
         dscores = self.probs
@@ -195,9 +199,10 @@ class MLPModel(AnnModel):
                 self.dW[i] += self.reg_lambda * self.W[i]
         else:
             for i in range(self.num_layers + 1):
+                reg_lambda =  local_reg_lambda if local_reg_lambda != None else self.reg_lambda/(10**i)
                 dW_l1 = np.zeros_like(self.W[i])
-                dW_l1[self.W[i]<0] = -self.reg_lambda
-                dW_l1[self.W[i]>0] = self.reg_lambda
+                dW_l1[self.W[i]<0] = -1 * reg_lambda
+                dW_l1[self.W[i]>0] = reg_lambda
                 self.dW[i] += dW_l1
         return # function end
     
@@ -206,6 +211,8 @@ class MLPModel(AnnModel):
         for i in range(self.num_layers + 1):
             self.W[i] += -step_size * self.dW[i]
             self.b[i] += -step_size * self.db[i]
+            if(self.prune == True):
+                self.W[i][np.abs(self.W[i]) < self.prune_thr] = 0
 
         return # function end
     
