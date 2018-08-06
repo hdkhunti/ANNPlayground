@@ -1,15 +1,15 @@
-#import pytorch
+import torch
 import numpy as np
 import matplotlib.pyplot as plt
 
-class AnnModel:
+class ANNModel:
     
     def __init__(self):
         self.dim_in = None
         self.dim_out = None
         self.num_layers = None
-        self.reg_type = None
-        self.reg_lambda = None
+        self.reg_type = 'L2'
+        self.reg_lambda = 0
         
         #Weights, transform from input to output Dim
         self.W = []
@@ -28,17 +28,14 @@ class AnnModel:
     
     def BackwardPass(self):
         pass
-    
-    def Loss(self):
-        pass
-    
+        
     def WeightUpdate(self):
         pass
     
     def AnnAccuracy(self, X, Y_exp):
         # Training Set accuracy 
         Y = self.ForwardPass(X)
-        preidicted_class = np.argmax(Y, axis=1)
+        preidicted_class = Y.argmax(axis=1)
         return np.mean(preidicted_class == Y_exp)
     
     def AnnVisualize(self, X, y, eval_step = 1e-2):
@@ -77,7 +74,21 @@ class AnnModel:
         #fig.savefig('spiral_net.png')
         return plt
 
-class MLPModel(AnnModel):
+class MLPModel(ANNModel):
+
+    '''
+    Multi Layer Perceptron model with arbitrary number of hidden layers.
+    Parameters 
+    dim_in: Input dimensions
+    hidden_layer_dim: List of hidden layer dimension starting from input to output layer
+    dim_out: Output Classification dimension
+    activation_type: Activation function 
+    reg_type: Regularization type L2 or L1
+    reg: Regularization weight
+    prune: Enable or Disable Pruning of weights
+    prune_thr: Threshold below which W weight is pushed to zero.
+    '''
+
     def __init__(self, dim_in, hidden_layer_dim, dim_out, activation_type = 'Relu',
                  reg_type = 'L2', reg = 1e-4, prune = False, prune_thr = 1e-6 ):
         self.dim_in = dim_in
@@ -143,30 +154,43 @@ class MLPModel(AnnModel):
         self.Y =  (np.dot(H, self.W[i+1]) + self.b[i+1])
         return self.Y # function end
     
-    def Loss(self, class_out, loss_type = 'SoftMax'):
+    def Loss(self, Y_out, Y_exp, loss_type = 'SoftMax'):
+        '''
+        Loss function: 
+        Y_out: ANN output
+        Y_exp: expected output
+        loss_type: Loss function type [SoftMax, SVM]
+        '''
         # compute class probability 
-        num_examples = class_out.shape[0]
-        exp_scores = np.exp(self.Y)
+        num_examples = Y_exp.shape[0]
+        exp_scores = np.exp(Y_out)
         self.probs = exp_scores/np.sum(exp_scores,axis=1,keepdims=True) 
         # compute loss
-        correctc_logprob = -np.log(self.probs[range(num_examples),class_out])
+        correctc_logprob = -np.log(self.probs[range(num_examples),Y_exp])
         #average loss across data
         data_loss = np.sum(correctc_logprob)/num_examples
 
         reg_loss = 0
         reg = self.reg_lambda
-
-        if(self.reg_type == 'L2'):
-            for i in range(self.num_layers + 1):
-                reg_loss += 0.5 * reg * np.sum(self.W[i] * self.W[i])
-        else: # 'L1'
-            for i in range(self.num_layers + 1):
-                reg_loss += reg * np.sum( np.abs(self.W[i]) )
+        
+        if(reg != 0):
+            if(self.reg_type == 'L2'):
+                for i in range(self.num_layers + 1):
+                    reg_loss += 0.5 * reg * np.sum(self.W[i] * self.W[i])
+            else: # 'L1'
+                for i in range(self.num_layers + 1):
+                    reg_loss += reg * np.sum( np.abs(self.W[i]) )
 
         loss = data_loss + reg_loss
         return loss
 
     def BackwardPass(self, X, Y_exp, local_reg_lambda = None):
+        '''
+        BackwardPass: Calculates gradient for each operation in the MLP
+        X: Input 
+        Y_exp: Expected output
+        local_reg_lambda: (Optional) Regularization weight override as part of backward pass
+        '''
          # gradients
         num_examples = X.shape[0]
         dscores = self.probs
@@ -207,6 +231,10 @@ class MLPModel(AnnModel):
         return # function end
     
     def WeightUpdate(self, step_size = 1e-2):
+        '''
+        WeightUpdate: Updates the weight and bias of the MLP using SGD (currenlty).
+        step_size: Step size in the direction oppostie to the gradient.
+        '''
         #Gradient decent 
         for i in range(self.num_layers + 1):
             self.W[i] += -step_size * self.dW[i]
@@ -215,6 +243,90 @@ class MLPModel(AnnModel):
                 self.W[i][np.abs(self.W[i]) < self.prune_thr] = 0
 
         return # function end
+   
+class TorchMLPModel(ANNModel):
+    def __init__(self, dim_in, hidden_layer_dim, dim_out,
+                dtype = torch.float, device = torch.device("cpu") ):
+        
+        super(TorchMLPModel,self).__init__()
+        self.dim_in = dim_in
+        self.dim_out = dim_out
+        self.dtype = dtype
+        # concatenate the dimensions into a list
+        hidden_layer_dim.append(dim_out)
+        list_dim =  [dim_in] + hidden_layer_dim
+        
+        
+        self.num_layers = len(list_dim) - 1
+
+        self.activation_fn = []
+        for i in range(self.num_layers):
+            self.b.append(torch.zeros( 1, list_dim[i+1], requires_grad=True, dtype=dtype, device=device ))
+            self.W.append(torch.randn( list_dim[i], list_dim[i+1], requires_grad=True, dtype=dtype, device=device ))
+            self.activation_fn.append(lambda _X: torch.clamp(_X , min=0)) # ReLU
+    
+    def ForwardPass(self,X):
+        #intermediate/Hidden Layer output 
+        H = torch.from_numpy(X)
+        H = H.type(self.dtype)
+
+        for i in range(self.num_layers - 1):
+            H = self.activation_fn[i](H.mm(self.W[i]) + self.b[i])
+        
+        Y_out = H.mm(self.W[self.num_layers-1]) + self.b[self.num_layers-1]
+        return Y_out
+
+    def Loss(self,Y_out,Y_exp):
+        # compute class probability 
+        num_examples = Y_exp.shape[0]
+        exp_scores = Y_out.exp()
+        self.probs = exp_scores/torch.sum(exp_scores,dim=0) 
+        # compute loss
+        correctc_logprob = -torch.log(self.probs[range(num_examples),Y_exp])
+        #average loss across data
+        data_loss = torch.sum(correctc_logprob)/num_examples
+
+        reg_loss = 0
+        reg = self.reg_lambda
+        
+        if(reg != 0):
+            if(self.reg_type == 'L2'):
+                for i in range(self.num_layers + 1):
+                    reg_loss += 0.5 * reg * torch.sum(self.W[i] * self.W[i])
+            else: # 'L1'
+                for i in range(self.num_layers + 1):
+                    reg_loss += reg * torch.sum( np.abs(self.W[i]) )
+
+        self.loss = data_loss + reg_loss
+        return self.loss
+
+       
+        
+
+    def WeightUpdate(self,step_size):
+        with torch.no_grad():
+            for i in range(self.num_layers):
+                self.W[i] += -step_size * self.W[i].grad
+                self.b[i] += -step_size * self.b[i].grad
+            
+            for i in range(self.num_layers):
+                # clear the applied gradient
+                self.W[i].grad.zero_()
+                self.b[i].grad.zero_()
+        return
+    
+    def BackwardPass(self,X,y):
+        # Propagate the loss backwards
+        self.loss.backward()
+        
+        return
+
+            
+
+
+
+        
+
     
 
 def main():
